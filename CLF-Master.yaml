@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Root Stack. Cloudformation script to create VPC, create EC2 within public subnet of VPC, RDS in private subnet, install Wordpress on EC2 and configure server to use RDS database and setup Route 53 record to host the website.
+
+Parameters:
+  Environment:
+    Description: Environment Name
+    Type: String
+  VpcName:
+    Type: String
+    Description: Name of the VPC being used for this environment.
+  VpcCIDR:
+    Description: CIDR block for the VPC.
+    Type: String
+    AllowedValues:
+      - 172.31.0.0/16
+      - 10.0.0.0/16
+      - 192.168.0.0/16
+  publicSubnet1CIDR:
+    Description: CIDR block for public subnet (match with VPC).
+    Type: String
+    AllowedValues:
+      - 172.31.1.0/24
+      - 10.0.1.0/24
+      - 192.168.1.0/24
+  publicSubnet2CIDR:
+    Description: CIDR block for public subnet (match with VPC).
+    Type: String
+    AllowedValues:
+      - 172.31.2.0/24
+      - 10.0.2.0/24
+      - 192.168.2.0/24
+  privateSubnet1CIDR:
+    Description: CIDR block for private subnet (match with VPC).
+    Type: String
+    AllowedValues:
+      - 172.31.3.0/24
+      - 10.0.3.0/24
+      - 192.168.3.0/24
+  privateSubnet2CIDR:
+    Description: CIDR block for private subnet (match with VPC).
+    Type: String
+    AllowedValues:
+      - 172.31.4.0/24
+      - 10.0.4.0/24
+      - 192.168.4.0/24
+  DBInstanceClass:
+    Description: Compute and memory capacity for DB instance.
+    Type: String
+    AllowedValues:
+      - db.t2.micro
+  DBInstanceIdentifier:
+    Description: Name of the RDS database instance.
+    Type: String
+  Engine:
+    Description: Database Engine Type
+    Type: String
+    AllowedValues:
+      - mysql
+  MasterUsername: 
+    Description: The master user name for the DB instance.
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  MasterUserPassword:
+    Description: The password for the master user.
+    Type: String
+    MinLength: '1'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
+  AllocatedStorage:
+    Description: The amount of storage (in gigabytes) to be initially allocated for the database instance.
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+
+  InstanceType:
+    Description: Compute and memory capacity for EC2 instance.
+    Type: String
+    AllowedValues:
+      - t2.micro
+  LatestAmiId:
+    Description: Latest Amazon Linux 2 AMI.
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  wordPressUser:
+    Description: Username for wordpress login.
+    Type: String
+
+  wordPressPassword:
+    Description: Password for wordpress login.
+    Type: String
+
+  DBName:
+    Description: The name of the database to create when the DB instance is created.
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  HostedZoneId:
+    Description: Hosted Zone ID for Route 53 Hosted Zone.
+    Type: String
+
+  subDomain:
+    Description: Subdomain for the wordpress website to be accessed on.
+    Type: String
+
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: #Upload VPC.yaml and enter URL here
+      Parameters:
+        Environment: !Ref Environment
+        VpcName: !Ref VpcName
+        VpcCIDR: !Ref VpcCIDR
+        publicSubnet1CIDR: !Ref publicSubnet1CIDR
+        publicSubnet2CIDR: !Ref publicSubnet2CIDR
+        privateSubnet1CIDR: !Ref privateSubnet1CIDR
+        privateSubnet2CIDR: !Ref privateSubnet2CIDR
+      TimeoutInMinutes: 60
+
+  DBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: #Upload RDS.yaml and enter URL here
+      Parameters:
+        Environment: !Ref Environment
+        DBInstanceClass: !Ref DBInstanceClass
+        DBInstanceIdentifier: !Ref DBInstanceIdentifier  
+        Engine: !Ref Engine 
+        MasterUsername: !Ref MasterUsername 
+        MasterUserPassword: !Ref MasterUserPassword
+        subnetGroup: !GetAtt VPCStack.Outputs.rdsSubnet
+        AllocatedStorage: !Ref AllocatedStorage
+        rdsSG: !GetAtt VPCStack.Outputs.rdsSecurity
+        DBName: !Ref DBName
+      TimeoutInMinutes: 60
+  
+  EC2Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: #Upload EC2.yaml and enter URL here
+      Parameters:
+        Environment: !Ref Environment
+        subnetEC2: !GetAtt VPCStack.Outputs.publicSubnet1
+        ImageId: !Ref 'LatestAmiId'
+        InstanceType: !Ref InstanceType
+        SG: !GetAtt VPCStack.Outputs.webServerSG
+        rdsEndpoint: !GetAtt DBStack.Outputs.endP
+        wpu: !Ref wordPressUser
+        wpp: !Ref wordPressPassword
+        rdsUsername: !Ref MasterUsername
+        rdsPassword: !Ref MasterUserPassword
+        DBName: !Ref DBName
+      TimeoutInMinutes: 60
+
+  Route53Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: #Upload Route53.yaml and enter URL here
+      Parameters:
+        HostedZoneId: !Ref HostedZoneId
+        subDomain: !Ref subDomain
+        PublicIp: !GetAtt EC2Stack.Outputs.ec2IP
+      TimeoutInMinutes: 60
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "VPC and Subnet Configuration"
+        Parameters: 
+          - VpcName
+          - VpcCIDR
+          - publicSubnet1CIDR
+          - publicSubnet2CIDR
+          - privateSubnet1CIDR
+          - privateSubnet2CIDR
+      - 
+        Label: 
+          default: "Database Configuration"
+        Parameters: 
+          - DBInstanceIdentifier
+          - DBInstanceClass
+          - Engine
+          - AllocatedStorage
+          - MasterUsername
+          - MasterUserPassword
+          - DBName
+      - 
+        Label: 
+          default: "EC2 Configuration"
+        Parameters: 
+          - InstanceType
+          - LatestAmiId
+      - 
+        Label: 
+          default: "Route53 Configuration"
+        Parameters: 
+          - HostedZoneId
+          - subDomain
+      - 
+        Label: 
+          default: "Wordpress Login"
+        Parameters: 
+          - wordPressUser
+          - wordPressPassword
+    ParameterLabels:
+      VpcName:
+        default: "VPC Name"
+      VpcCIDR:
+        default: "VPC CIDR"
+      publicSubnet1CIDR:
+        default: "Public Subnet 1 CIDR"
+      publicSubnet2CIDR:
+        default: "Public Subnet 2 CIDR"
+      privateSubnet1CIDR:
+        default: "Private Subnet 1 CIDR"
+      privateSubnet2CIDR:
+        default: "Private Subnet 2 CIDR"
+      DBInstanceIdentifier:
+        default: "DB Instance Identifier"
+      DBInstanceClass:
+        default: "Instance Type"
+      Engine:
+        default: "Database Engine"
+      AllocatedStorage:
+        default: "Allocated Storage"
+      MasterUsername:
+        default: "Master Username"
+      MasterUserPassword:
+        default: "Master Password"
+      DBName:
+        default: "Database Name"
+      InstanceType:
+        default: "Instance Type"
+      HostedZoneId:
+        default: "Hosted Zone ID"
+      subDomain:
+        default: "Subdomain"
+      wordPressUser:
+        default: "Wordpress Username"
+      wordPressPassword:
+        default: "Wordpress Password"
+      LatestAmiId:
+        default: "Image Id"

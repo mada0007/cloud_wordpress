@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Route 53 record for wordpress website.
+
+Parameters:
+  HostedZoneId:
+    Type: String
+
+  initialDomain:
+    Type: String
+    Default: training.trambo.cloud
+
+  subDomain:
+    Type: String
+
+  PublicIp:
+    Type: String
+
+Resources:
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "${subDomain}.${initialDomain}"
+      Type: A
+      TTL: '900'
+      ResourceRecords: [!Ref PublicIp]

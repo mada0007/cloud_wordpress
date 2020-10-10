@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: RDS Database for EC2 Wordpress
+
+Parameters:
+  DBInstanceClass:
+    Type: String
+
+  DBInstanceIdentifier:
+    Type: String
+
+  Engine:
+    Type: String
+
+  MasterUsername:
+    Type: String
+
+  MasterUserPassword:
+    Type: String
+
+  subnetGroup:
+    Type: String
+
+  AllocatedStorage:
+    Type: String
+
+  rdsSG:
+    Type: CommaDelimitedList
+
+  DBName:
+    Type: String
+
+  Environment:
+    Type: String
+
+Outputs:
+  endP:
+    Description: rds database instance endpoint
+    Value: !GetAtt MyDB.Endpoint.Address
+
+Resources:
+  MyDB:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref Engine
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBSubnetGroupName: !Ref subnetGroup
+      AllocatedStorage: !Ref AllocatedStorage
+      VPCSecurityGroups: !Ref rdsSG
+      DBName: !Ref DBName
+      Tags:
+        - Key: Name
+          Value: !Ref Environment

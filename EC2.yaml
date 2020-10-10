@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Wordpress EC2
+
+Parameters:
+  InstanceType:
+    Type: String
+
+  subnetEC2:
+    Type: String
+
+  rdsEndpoint:
+    Type: String
+
+  SG:
+    Type: String
+
+  rdsUsername:
+    Type: String
+
+  rdsPassword:
+    Type: String
+
+  wpu:
+    Type: String
+
+  wpp:
+    Type: String 
+
+  DBName:
+    Type: String
+
+  ImageId:
+    Type: String
+
+  Environment:
+    Type: String
+
+Outputs:
+  ec2IP:
+    Description: Public ip address for EC2
+    Value: !GetAtt myEC2.PublicIp
+
+Resources:
+  myEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      SubnetId: !Ref subnetEC2
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      Tags:
+        - Key: Name
+          Value: !Ref Environment
+      SecurityGroupIds: 
+      - !Ref SG
+      UserData:
+        Fn::Base64:                              
+          !Sub |
+            #!/bin/bash 
+            yum update -y
+            yum install -y mysql httpd
+            wget -P /home/test https://wordpress.org/latest.tar.gz
+            tar -xzf /home/test/latest.tar.gz --directory /home/test/
+            
+            export MYSQL_HOST=${rdsEndpoint}
+            mysql --user=${rdsUsername} --password=${rdsPassword} ${DBName}
+            CREATE USER '${wpu}' IDENTIFIED BY '${wpp}';
+            GRANT ALL PRIVILEGES ON ${DBName}.* TO ${wpu};
+            FLUSH PRIVILEGES;
+            Exit
+
+            service httpd start
+            mv /home/test/wordpress/wp-config-sample.php /home/test/wordpress/wp-config.php 
+
+            sed -i 's/database_name_here/${DBName}/g' /home/test/wordpress/wp-config.php 
+            sed -i 's/username_here/${rdsUsername}/g' /home/test/wordpress/wp-config.php 
+            sed -i 's/password_here/${rdsPassword}/g' /home/test/wordpress/wp-config.php 
+            sed -i 's/localhost/${rdsEndpoint}/g' /home/test/wordpress/wp-config.php 
+
+            curl https://api.wordpress.org/secret-key/1.1/salt/ --output /home/test/wordpress/saltKey.txt
+            sed -i -e '/NONCE_SALT/{r /home/test/wordpress/saltKey.txt' -e 'd}' /home/test/wordpress/wp-config.php
+            sed -i '/put your unique phrase here/d' /home/test/wordpress/wp-config.php
+            amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
+            cp -r /home/test/wordpress/* /var/www/html/
+            service httpd restart
